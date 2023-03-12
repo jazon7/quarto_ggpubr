@@ -1,0 +1,101 @@
+---
+title: "A closer look at the ggpubr package for R"
+format:
+  html:
+    theme: litera
+    toc: true
+    toc-location: left
+    number-sections: false
+    number-depth: 2
+    code-fold: show
+    code-tools: true
+    code-overflow: wrap
+    code-copy: hover
+    fig-align: center
+    fig-height: 7
+    fig-width: 9
+    highlight-style: espresso
+    embed-resources: true
+    code-link: false
+editor: source
+execute: 
+  echo: TRUE
+  warning: FALSE
+  eval: false
+---
+
+## Introduction
+
+If you are using R there is a very good chance you are creating plots using the `ggplot2` package.
+
+**`ggplot2`**, is an open-source data visualization R package created by Hadley Wickham.
+
+In 2015, `ggplot 2.0.0` was released with an official extension mechanism, meaning that others were now able to easily create stats, geoms and positions, and provide them in other packages.
+
+There are now over 100 registered `ggplot2` extensions available which support and/or extend `ggplot2`.
+
+My favourite is the `ggpubr` package - a package that provides some easy-to-use functions for creating clean and publication ready plots.
+
+## ggpubr
+
+There are many functions that `ggpubr` provides. Lets take a closer look at some of these.
+
+### Themes
+
+Start by creating boxplots comparing toothlength by delivery method and dose:
+```{r}
+library(pacman)
+p_load(tidyverse, rio, patchwork, ggpubr, rstatix) 
+options (scipen=999)
+
+data <- rio::import("sport_car_price.csv") %>% 
+  as_tibble()
+names(data)
+data <-
+  data %>% filter(!grepl("Electric", `Engine Size (L)`)) %>% 
+  filter(`Engine Size (L)` != "N/A") %>% 
+  filter(`Engine Size (L)` != "0") %>% 
+  filter(`Engine Size (L)` != "-") %>%
+   filter(!grepl("Hybrid", `Engine Size (L)`)) %>%
+  distinct(`Car Make`,`Car Model`,Year,`Engine Size (L)`,Horsepower, `Torque (lb-ft)`, .keep_all = TRUE)
+
+data <- data %>% 
+  mutate(across(everything(), ~str_replace_all(., ",","")))
+
+data <- data %>% 
+  mutate(across(c(`Price (in USD)`,`Horsepower`, `Torque (lb-ft)`, `Engine Size (L)`, `0-60 MPH Time (seconds)`),
+         as.numeric))
+         
+#          
+# cut(age, breaks = c(0, 14, 24, 64, Inf),
+#     labels = c("Children", "Youth", "Adult", "Senior"),
+#     include.lowest = TRUE)
+
+```
+
+The default `ggplot2` look and feel is OK, but could definitely be improved on.
+
+Lets add the `ggpubr::theme_pubr()` theme to the plot:
+
+```{r}
+plot <- plot + ggpubr::theme_pubr()
+plot
+```
+
+Now set colours for the plot based on the New England Journal of Medicine:
+```{r}
+plot <- plot %>% 
+  ggpubr::set_palette(palette = "nejm")
+plot
+
+```
+That is how easy it is to create a clean and publication ready plot using `ggpubr`.
+
+## Statistics
+
+```{r}
+plot + stat_compare_means(comparisons = my_comparisons, label = "p.adj", size = 3, step.increase = 0.15)
+```
+
+
+
