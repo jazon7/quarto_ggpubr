@@ -21,36 +21,51 @@ editor: source
 execute: 
   echo: TRUE
   warning: FALSE
-  eval: false
+knitr:
+  opts_chunk: 
+    message: FALSE
 ---
 
-## Introduction
+# Prerequisites
+
+Load required packages:
+
+```{r}
+library(pacman)
+p_load(tidyverse, rio, ggpubr, rstatix, scales, flextable)
+```
+
+# Introduction
 
 If you are using R there is a very good chance you are creating plots using the `ggplot2` package.
 
-**`ggplot2`**, is an open-source data visualization R package created by Hadley Wickham.
+What you might not know is that there are now over 100 registered extensions available which support and/or extend `ggplot2`[^1].
 
-In 2015, `ggplot 2.0.0` was released with an official extension mechanism, meaning that others were now able to easily create stats, geoms and positions, and provide them in other packages.
+[^1]: [ggplot2 extensions gallery](https://exts.ggplot2.tidyverse.org/gallery/)
 
-There are now over 100 registered `ggplot2` extensions available which support and/or extend `ggplot2`.
+One of my favourites is `ggpubr` - a package that provides some easy-to-use functions for creating clean and publication ready plots.
 
-My favourite is the `ggpubr` package - a package that provides some easy-to-use functions for creating clean and publication ready plots.
+Let's see what `ggpubr` has to offer using the [sports car price](https://www.kaggle.com/datasets/rkiattisak/sports-car-prices-dataset) data set.
 
-## ggpubr
+# Are faster sports cars more expensive?
 
-There are many functions that `ggpubr` provides. Lets take a closer look at some of these.
+![](images/sport_car.jpg){width="671"}
 
-### Themes
+The question we want to answer is will spending more money on a sports car gets you a faster car?
 
-Start by creating boxplots comparing toothlength by delivery method and dose:
+To answer this question we will create a plot and leverage some of the functions provided by `ggpubr`.
+
+Start by downloading and importing the data set:
+
 ```{r}
-library(pacman)
-p_load(tidyverse, rio, patchwork, ggpubr, rstatix) 
-options (scipen=999)
-
 data <- rio::import("sport_car_price.csv") %>% 
   as_tibble()
-names(data)
+flextable::flextable(data %>% head)
+```
+
+Then clean up the data and convert time taken to reach 60 mph (in seconds) from a continuous to a categorical variable:
+
+```{r }
 data <-
   data %>% filter(!grepl("Electric", `Engine Size (L)`)) %>% 
   filter(`Engine Size (L)` != "N/A") %>% 
@@ -65,37 +80,142 @@ data <- data %>%
 data <- data %>% 
   mutate(across(c(`Price (in USD)`,`Horsepower`, `Torque (lb-ft)`, `Engine Size (L)`, `0-60 MPH Time (seconds)`),
          as.numeric))
-         
-#          
-# cut(age, breaks = c(0, 14, 24, 64, Inf),
-#     labels = c("Children", "Youth", "Adult", "Senior"),
-#     include.lowest = TRUE)
 
+data <- data %>% 
+  mutate(`time(0-60mph)`=  cut(`0-60 MPH Time (seconds)`, breaks = c(2, 2.9, 4 , Inf),
+     labels = c("< 3", "3-4", "> 4"),
+     include.lowest = TRUE))
+
+data <- data %>% 
+  rename(price = `Price (in USD)`)
+
+flextable::flextable(data %>% 
+                       select(-`Engine Size (L)`, -Horsepower, -`Torque (lb-ft)`, -`0-60 MPH Time (seconds)`) %>% 
+                       head())%>%
+  align_text_col(align = "right") %>%
+  flextable::set_table_properties(layout = "autofit",  width = 1) 
 ```
 
-The default `ggplot2` look and feel is OK, but could definitely be improved on.
+Then create boxplots comparing the price of the 0-to-60 mph groups using `ggplot2` basic settings:
 
-Lets add the `ggpubr::theme_pubr()` theme to the plot:
+```{r warning=FALSE}
+plot <- 
+  ggplot(data, aes(x=`time(0-60mph)`, y=price)) + 
+  geom_boxplot(aes( fill = `time(0-60mph)`)) +
+  ylab("Price (USD)") +
+  xlab("Time 0-60 mph (sec)")
 
-```{r}
+plot
+```
+
+The default `ggplot2` look and feel is OK, but could definitely be improved.
+
+This is where `ggpubr` can help.
+
+### Theme
+
+First add the `theme_pubr()` theme to the plot:
+
+```{r warning=FALSE}
 plot <- plot + ggpubr::theme_pubr()
 plot
 ```
 
-Now set colours for the plot based on the New England Journal of Medicine:
-```{r}
-plot <- plot %>% 
-  ggpubr::set_palette(palette = "nejm")
-plot
+Then add the colour palette taken from the New England Journal of Medicine with the `set_palette` function:
 
+```{r warning=FALSE}
+plot <- plot %>% 
+  ggpubr::set_palette(palette = "nejm") +
+  theme(legend.position = 'none')
+
+plot
 ```
-That is how easy it is to create a clean and publication ready plot using `ggpubr`.
+
+This is a much better looking plot, but the price is in scientific notation and the price range across groups is so large that it is making the boxplots appear compressed.\
+\
+Let's further improve the plot.
+
+## Scales
+
+Using the `scales` package, set the y-axis to a logarithmic scale and convert it to dollar labels:
+
+```{r}
+plot <- plot +
+  scale_y_continuous(
+    trans = 'log10',
+    labels = scales::label_dollar(scale_cut = cut_short_scale()
+                                  ),
+    breaks = scales::breaks_log(n = 5),
+    expand = expansion(mult = c(0, 0.1))
+    )
+
+plot
+```
 
 ## Statistics
 
+We can also improve the plot by adding statistics.\
+\
+In combination with the `rstatix` package, `ggpubr` can make adding statistical labels to a plot relatively easy.
+
+To add statistics, use the `t_test` function from the `rstatix` package to create a data frame with the comparisons required[^2]:
+
+[^2]: I [adjusted the alpha (α) level](https://www.statology.org/bonferroni-correction/) so that the probability of committing a type I error is controlled for. I also had to rename the time(0-60mph) variable to time. This is because the `t_test` function could not find the variable when it was input with back ticks (\`) which is the only way I know how when there is a numeric value within the name.
+
 ```{r}
-plot + stat_compare_means(comparisons = my_comparisons, label = "p.adj", size = 3, step.increase = 0.15)
+stat_test <- data %>% 
+  rename(time = `time(0-60mph)`) %>% 
+  rstatix::t_test(price ~ time, detailed = TRUE) %>%
+  rstatix::adjust_pvalue(method = "bonferroni") %>%
+  rstatix::add_significance("p.adj")
+
+flextable::flextable(stat_test)
 ```
 
+We can now add the significance values to our plot:
 
+```{r warning=FALSE}
+# Add p-values onto the box plots
+stat_test <- 
+  stat_test %>%
+  add_y_position(y.trans = log10,
+                 step.increase = 0.5)
 
+plot <- plot + 
+  stat_pvalue_manual(
+  stat_test,  
+  label = "{p.adj.signif}",
+  tip.length = 0.005,
+  size = 6
+  )
+
+plot
+```
+
+Now make some final adjustments to the plot[^3]:
+
+[^3]: Increase the axis text and title size and add the average price to the boxplot represented as a grey dot.
+
+```{r}
+f1 <- function(x) {
+  log10(mean(10 ^ x)) 
+}
+
+plot <- plot +
+  stat_summary(fun.y = f1, colour = 'grey', size = 1.5) +
+  theme(axis.text = element_text(size = 20),
+        axis.title = element_text(size = 24))
+plot
+```
+
+And there we have a really clean looking plot that is easy to read and shows statistical significance.
+
+# Conclusion
+
+`ggpubr` is a fantastic extension to `ggplot2` and makes it easy to turn good plots into ***great*** plots. \
+\
+So does spending more money on a sports car get you a faster car?
+
+Thanks to `ggpubr`, we can see that on average the \> 4 second cars are the least expensive, the 3-4 seconds cars are in the middle, and the \< 3 seconds cars are the most expensive.\
+\
+Thus, spending more money on a sports car does appear to buy you a faster car.
